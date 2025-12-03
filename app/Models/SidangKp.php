@@ -14,6 +14,7 @@ class SidangKp extends Model
         'ruangan',
         'penguji',
         'nilai',
+        'surat_selesai',
     ];
     protected function casts(): array
     {

@@ -13,7 +13,7 @@ class ListMahasiswas extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            // Dosen tidak bisa create mahasiswa
         ];
     }
 }

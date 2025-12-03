@@ -5,6 +5,7 @@ namespace App\Filament\Dosen\Resources;
 use App\Filament\Dosen\Resources\PenerimaanKpResource\Pages;
 use App\Filament\Dosen\Resources\PenerimaanKpResource\RelationManagers;
 use App\Models\PenerimaanKp;
+use App\Models\Dosen;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -85,6 +86,19 @@ class PenerimaanKpResource extends Resource
         ;
     }
 
+    public static function getTabs(): array
+    {
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_penerimaan', 'diterima')),
+            'ditolak' => Tables\Tabs\Tab::make('Ditolak')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_penerimaan', 'ditolak')),
+        ];
+    }
+
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
@@ -160,8 +174,12 @@ class PenerimaanKpResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) {
-            $query->where('dosens', Auth::user()->id);
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        if (!$dosen) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) use ($dosen) {
+            $query->where('dosens', $dosen->id);
         });
     }
 

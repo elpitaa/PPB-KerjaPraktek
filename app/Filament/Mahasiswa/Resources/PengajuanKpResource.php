@@ -187,6 +187,19 @@ class PengajuanKpResource extends Resource
         ;
     }
 
+    public static function getTabs(): array
+    {
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'pending' => Tables\Tabs\Tab::make('Pending')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_pengajuan', 'pending')),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_pengajuan', 'diterima')),
+            'ditolak' => Tables\Tabs\Tab::make('Ditolak')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_pengajuan', 'ditolak')),
+        ];
+    }
+
     public static function getRelations(): array
     {
         return [
@@ -250,33 +263,26 @@ class PengajuanKpResource extends Resource
                     ])
                     ->columns('2')
                     ->collapsible(),
-                // Actions::make([
-                //     Action::make('status_pengajuan_edit')
-                //         ->icon('heroicon-o-pencil-square')
-                //         ->label('Edit Status Pengajuan')
-                //         ->form([
-                //             Select::make('status_pengajuan')
-                //                 ->label('Status Pengajuan')
-                //                 ->options([
-                //                     'diterima' => 'Terima',
-                //                     'ditolak' => 'Tolak',
-                //                 ])
-                //                 ->required()
-                //                 ->native('false')
-                //                 ->searchable(),
-                //         ])
-                //         ->action(function (array $data, PengajuanKp $record): void {
-                //             $record->status_pengajuan = $data['status_pengajuan'];
-                //             $record->save();
-                //         })
-                //         ->successNotificationTitle('Status updated'),
-                // ]),
+                
+                Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Pengajuan')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                ]),
             ]);
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->where('id_mahasiswa', auth::id());
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        if (!$mahasiswa) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->where('id_mahasiswa', $mahasiswa->id);
     }
 
 

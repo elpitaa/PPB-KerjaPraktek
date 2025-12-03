@@ -7,6 +7,7 @@ use App\Filament\Mahasiswa\Resources\SidangKpResource\RelationManagers;
 use App\Models\LaporanKp;
 use App\Models\SidangKp;
 use App\Models\Dosen;
+use App\Models\Mahasiswa;
 use Filament\Forms;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
@@ -42,25 +43,27 @@ class SidangKpResource extends Resource
     protected static ?int $navigationSort = 5;
     public static function form(Form $form): Form
     {
+        // Ambil data mahasiswa berdasarkan email user yang login
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        
         return $form
             ->schema([
                 Section::make('Data Pengajuan Mahasiswa')
                     ->schema([
                         TextInput::make('Nama Mahasiswa')
-                            ->default(Auth::user()->name)
-                            ->default(auth::user()->name)
+                            ->default($mahasiswa ? $mahasiswa->name : Auth::user()->name)
                             ->disabled(),
                         TextInput::make('NIM Mahasiswa')
                             ->label('NIM Mahasiswa')
-                            ->default(auth::user()->nim)
+                            ->default($mahasiswa ? $mahasiswa->nim : '-')
                             ->disabled(),
                         TextInput::make('Sks Mahasiswa')
                             ->label('Sks Mahasiswa')
-                            ->default(auth::user()->jumlah_sks)
+                            ->default($mahasiswa ? $mahasiswa->jumlah_sks : '-')
                             ->disabled(),
                         TextInput::make('IPK Mahasiswa')
                             ->label('IPK Mahasiswa')
-                            ->default(auth::user()->ipk)
+                            ->default($mahasiswa ? $mahasiswa->ipk : '-')
                             ->disabled(),
 
                     ])
@@ -83,18 +86,25 @@ class SidangKpResource extends Resource
                             ->required(),
                         Forms\Components\Select::make('id_pengajuan_kp')
                             ->label('Pilih Pengajuan KP')
-                            ->options(
-                                LaporanKp::join('pengajuan_kp', 'pengajuan_kp.id', '=', 'laporan_kp.id_pengajuan_kp')
+                            ->helperText('Hanya menampilkan pengajuan yang laporan-nya sudah diterima dan belum dibuat sidang')
+                            ->options(function() use ($mahasiswa) {
+                                if (!$mahasiswa) return [];
+                                
+                                // Ambil id pengajuan yang sudah ada di sidang_kp
+                                $sudahAdaSidang = SidangKp::pluck('id_pengajuan_kp')->toArray();
+                                
+                                return LaporanKp::join('pengajuan_kp', 'pengajuan_kp.id', '=', 'laporan_kp.id_pengajuan_kp')
                                     ->join('proposal_kps', 'proposal_kps.id_pengajuan_kp', '=', 'pengajuan_kp.id')
                                     ->join('penerimaan_kp', 'penerimaan_kp.id_pengajuan_kp', '=', 'pengajuan_kp.id')
-                                    ->where('pengajuan_kp.id_mahasiswa', Auth::user()->id)
+                                    ->where('pengajuan_kp.id_mahasiswa', $mahasiswa->id)
                                     ->where('pengajuan_kp.status_pengajuan', 'diterima')
                                     ->where('proposal_kps.status_proposal', 'diterima')
                                     ->where('penerimaan_kp.status_penerimaan', 'diterima')
                                     ->where('laporan_kp.status_laporan', 'diterima')
+                                    ->whereNotIn('pengajuan_kp.id', $sudahAdaSidang)
                                     ->pluck('pengajuan_kp.nama_perusahaan', 'pengajuan_kp.id')
-                                    ->toArray()
-                            )
+                                    ->toArray();
+                            })
                             ->required()
                             ->native(false)
                             ->searchable()
@@ -169,6 +179,14 @@ class SidangKpResource extends Resource
                 Tables\Actions\ViewAction::make(),
             ]);
     }
+
+    public static function getTabs(): array
+    {
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+        ];
+    }
+
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
@@ -219,13 +237,35 @@ class SidangKpResource extends Resource
                             }),
                         Components\TextEntry::make('nilai')
                             ->label('Nilai Akhir')
-                            ->default('Belum ada nilai'),
+                            ->default('Belum ada nilai')
+                            ->suffix(function ($state) {
+                                if ($state) {
+                                    if ($state >= 85) return ' (A)';
+                                    if ($state >= 80) return ' (B+)';
+                                    if ($state >= 75) return ' (B)';
+                                    if ($state >= 70) return ' (C+)';
+                                    if ($state >= 65) return ' (C)';
+                                    if ($state >= 60) return ' (D)';
+                                    return ' (E)';
+                                }
+                                return '';
+                            }),
                         Components\TextEntry::make('keterangan')
                             ->label('Keterangan'),
 
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
+                Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Selesai KP')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_selesai)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_selesai))
+                        ->openUrlInNewTab(),
+                ]),
                 // Actions::make([
                 //     Action::make('Input Nilai Akhir')
                 //         ->icon('heroicon-o-pencil-square')
@@ -255,11 +295,12 @@ class SidangKpResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) {
-            $query->join('laporan_kp', 'laporan_kp.id_pengajuan_kp', '=', 'pengajuan_kp.id')
-                ->join('pengajuan_kp as pk', 'pk.id', '=', 'laporan_kp.id_pengajuan_kp')
-                ->join('mahasiswas as mahasiswa', 'mahasiswa.id', '=', 'pk.id_mahasiswa')
-                ->where('pk.id_mahasiswa', Auth::user()->id);
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        if (!$mahasiswa) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) use ($mahasiswa) {
+            $query->where('id_mahasiswa', $mahasiswa->id);
         });
     }
 

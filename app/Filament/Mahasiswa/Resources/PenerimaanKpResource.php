@@ -6,6 +6,7 @@ use App\Filament\Mahasiswa\Resources\PenerimaanKpResource\Pages;
 use App\Filament\Mahasiswa\Resources\PenerimaanKpResource\RelationManagers;
 use App\Models\PenerimaanKp;
 use App\Models\ProposalKp;
+use App\Models\Mahasiswa;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Section;
@@ -40,25 +41,27 @@ class PenerimaanKpResource extends Resource
     protected static ?int $navigationSort = 4;
     public static function form(Form $form): Form
     {
+        // Ambil data mahasiswa berdasarkan email user yang login
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        
         return $form
             ->schema([
                 Section::make('Data Pengajuan Mahasiswa')
                     ->schema([
                         TextInput::make('Nama Mahasiswa')
-                            ->default(Auth::user()->name)
-                            ->default(auth::user()->name)
+                            ->default($mahasiswa ? $mahasiswa->name : Auth::user()->name)
                             ->disabled(),
                         TextInput::make('NIM Mahasiswa')
                             ->label('NIM Mahasiswa')
-                            ->default(auth::user()->nim)
+                            ->default($mahasiswa ? $mahasiswa->nim : '-')
                             ->disabled(),
                         TextInput::make('Sks Mahasiswa')
                             ->label('Sks Mahasiswa')
-                            ->default(auth::user()->jumlah_sks)
+                            ->default($mahasiswa ? $mahasiswa->jumlah_sks : '-')
                             ->disabled(),
                         TextInput::make('IPK Mahasiswa')
                             ->label('IPK Mahasiswa')
-                            ->default(auth::user()->ipk)
+                            ->default($mahasiswa ? $mahasiswa->ipk : '-')
                             ->disabled(),
 
                     ])
@@ -67,18 +70,26 @@ class PenerimaanKpResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('id_pengajuan_kp')
                             ->label('Pilih Pengajuan KP')
-                            ->options(
-                                ProposalKp::join('pengajuan_kp', 'pengajuan_kp.id', '=', 'proposal_kps.id_pengajuan_kp')
-                                    ->where('pengajuan_kp.id_mahasiswa', Auth::user()->id)
+                            ->helperText('Hanya menampilkan pengajuan yang proposal-nya sudah diterima dan belum dibuat penerimaan')
+                            ->options(function() use ($mahasiswa) {
+                                if (!$mahasiswa) return [];
+                                
+                                // Ambil id pengajuan yang sudah ada di penerimaan_kp
+                                $sudahAdaPenerimaan = PenerimaanKP::pluck('id_pengajuan_kp')->toArray();
+                                
+                                return ProposalKp::join('pengajuan_kp', 'pengajuan_kp.id', '=', 'proposal_kps.id_pengajuan_kp')
+                                    ->where('pengajuan_kp.id_mahasiswa', $mahasiswa->id)
                                     ->where('pengajuan_kp.status_pengajuan', 'diterima')
                                     ->where('proposal_kps.status_proposal', 'diterima')
+                                    ->whereNotIn('pengajuan_kp.id', $sudahAdaPenerimaan)
                                     ->pluck('pengajuan_kp.nama_perusahaan', 'pengajuan_kp.id')
-                                    ->toArray()
-                            )
+                                    ->toArray();
+                            })
                             ->required()
                             ->native(false)
                             ->searchable()
-                            ->selectablePlaceholder(false),
+                            ->selectablePlaceholder(false)
+                            ->unique(ignoreRecord: true),
                         Select::make('status_penerimaan')
                             ->label('Hasil Penerimaan Peruusahaan')
                             ->options([
@@ -88,8 +99,7 @@ class PenerimaanKpResource extends Resource
                             ->required()
                             ->native(false)
                             ->searchable()
-                            ->selectablePlaceholder(false)
-                            ->unique(),
+                            ->selectablePlaceholder(false),
 
                         Forms\Components\Textarea::make('keterangan')
                             ->label('Keterangan Peruusahaan')
@@ -107,10 +117,12 @@ class PenerimaanKpResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) {
-            $query->join('penerimaan_kp', 'penerimaan_kp.id_pengajuan_kp', '=', 'pengajuan_kp.id')
-                ->join('mahasiswas as mahasiswa', 'mahasiswa.id', '=', 'pengajuan_kp.id_mahasiswa')
-                ->where('pengajuan_kp.id_mahasiswa', Auth::user()->id);
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        if (!$mahasiswa) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) use ($mahasiswa) {
+            $query->where('id_mahasiswa', $mahasiswa->id);
         });
     }
 
@@ -156,6 +168,17 @@ class PenerimaanKpResource extends Resource
                 // Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
             ]);
+    }
+
+    public static function getTabs(): array
+    {
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_penerimaan', 'diterima')),
+            'ditolak' => Tables\Tabs\Tab::make('Ditolak')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_penerimaan', 'ditolak')),
+        ];
     }
 
     public static function infolist(Infolist $infolist): Infolist

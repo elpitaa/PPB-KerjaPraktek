@@ -5,6 +5,8 @@ namespace App\Filament\Dosen\Resources;
 use App\Filament\Dosen\Resources\ProposalKpResource\Pages;
 use App\Filament\Dosen\Resources\ProposalKpResource\RelationManagers;
 use App\Models\ProposalKp;
+use App\Models\Dosen;
+use App\Http\Controllers\SuratController;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -89,6 +91,21 @@ class ProposalKpResource extends Resource
             ]);
     }
 
+    public static function getTabs(): array
+    {
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'pending' => Tables\Tabs\Tab::make('Pending')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_proposal', 'pending')),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_proposal', 'diterima')),
+            'revisi' => Tables\Tabs\Tab::make('Revisi')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_proposal', 'revisi')),
+        ];
+    }
+
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
@@ -162,7 +179,16 @@ class ProposalKpResource extends Resource
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
                 Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Proposal')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                    
                     Action::make('status_proposal_edit')
                         ->icon('heroicon-o-pencil-square')
                         ->label('Edit Status Proposal')
@@ -184,6 +210,20 @@ class ProposalKpResource extends Resource
                         ->action(function (array $data, ProposalKp $record): void {
                             $record->status_proposal = $data['status_proposal'];
                             $record->keterangan = $data['keterangan'];
+                            
+                            // Generate surat jika status diterima
+                            if ($data['status_proposal'] === 'diterima') {
+                                try {
+                                    $suratPath = SuratController::generateSuratProposal($record);
+                                    $record->surat_persetujuan = $suratPath;
+                                } catch (\Exception $e) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Gagal generate surat: ' . $e->getMessage())
+                                        ->danger()
+                                        ->send();
+                                }
+                            }
+                            
                             $record->save();
                         })
                         ->successNotificationTitle('Status updated'),
@@ -193,8 +233,12 @@ class ProposalKpResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) {
-            $query->where('dosens', Auth::user()->id);
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        if (!$dosen) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) use ($dosen) {
+            $query->where('dosens', $dosen->id);
         });
     }
 

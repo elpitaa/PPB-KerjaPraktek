@@ -5,6 +5,7 @@ namespace App\Filament\Dosen\Resources;
 use App\Filament\Dosen\Resources\MahasiswaResource\Pages;
 use App\Filament\Dosen\Resources\MahasiswaResource\RelationManagers;
 use App\Models\Mahasiswa;
+use App\Models\Dosen;
 use Filament\Forms;
 use Filament\Forms\Components\Tabs\Tab;
 use Filament\Forms\Form;
@@ -93,9 +94,16 @@ class MahasiswaResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('dosen', function (Builder $query) {
-            $query->where('dosens.id', Auth::user()->id);
-        });
+        // Ambil data dosen berdasarkan email user yang login
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        
+        if (!$dosen) {
+            // Jika dosen tidak ditemukan, return query kosong
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        
+        // Filter mahasiswa berdasarkan dosen pembimbing
+        return parent::getEloquentQuery()->where('dosens', $dosen->id);
     }
 
 
@@ -110,8 +118,7 @@ class MahasiswaResource extends Resource
     {
         return [
             'index' => Pages\ListMahasiswas::route('/'),
-            'create' => Pages\CreateMahasiswa::route('/create'),
-            'edit' => Pages\EditMahasiswa::route('/{record}/edit'),
+            // Dosen tidak bisa create/edit mahasiswa, hanya view
             'view' => Pages\ViewMahasiswa::route('/{record}'),
         ];
     }

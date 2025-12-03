@@ -11,6 +11,7 @@ class ProposalKp extends Model
         'status_proposal',
         'keterangan',
         'file',
+        'surat_persetujuan',
     ];
 
     public function pengajuanKp()

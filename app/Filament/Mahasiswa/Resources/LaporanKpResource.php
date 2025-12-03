@@ -6,6 +6,7 @@ use App\Filament\Mahasiswa\Resources\LaporanKpResource\Pages;
 use App\Filament\Mahasiswa\Resources\LaporanKpResource\RelationManagers;
 use App\Models\LaporanKp;
 use App\Models\PenerimaanKP;
+use App\Models\Mahasiswa;
 use Faker\Provider\ar_EG\Text;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
@@ -46,25 +47,27 @@ class LaporanKpResource extends Resource
 
     public static function form(Form $form): Form
     {
+        // Ambil data mahasiswa berdasarkan email user yang login
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        
         return $form
             ->schema([
                 Section::make('Data Pengajuan Mahasiswa')
                     ->schema([
                         TextInput::make('Nama Mahasiswa')
-                            ->default(Auth::user()->name)
-                            ->default(auth::user()->name)
+                            ->default($mahasiswa ? $mahasiswa->name : Auth::user()->name)
                             ->disabled(),
                         TextInput::make('NIM Mahasiswa')
                             ->label('NIM Mahasiswa')
-                            ->default(auth::user()->nim)
+                            ->default($mahasiswa ? $mahasiswa->nim : '-')
                             ->disabled(),
                         TextInput::make('Sks Mahasiswa')
                             ->label('Sks Mahasiswa')
-                            ->default(auth::user()->jumlah_sks)
+                            ->default($mahasiswa ? $mahasiswa->jumlah_sks : '-')
                             ->disabled(),
                         TextInput::make('IPK Mahasiswa')
                             ->label('IPK Mahasiswa')
-                            ->default(auth::user()->ipk)
+                            ->default($mahasiswa ? $mahasiswa->ipk : '-')
                             ->disabled(),
 
                     ])
@@ -87,16 +90,23 @@ class LaporanKpResource extends Resource
                             ->required(),
                         Forms\Components\Select::make('id_pengajuan_kp')
                             ->label('Pilih Pengajuan KP')
-                            ->options(
-                                PenerimaanKP::join('pengajuan_kp', 'pengajuan_kp.id', '=', 'penerimaan_kp.id_pengajuan_kp')
+                            ->helperText('Hanya menampilkan pengajuan yang penerimaan-nya sudah diterima dan belum dibuat laporan')
+                            ->options(function() use ($mahasiswa) {
+                                if (!$mahasiswa) return [];
+                                
+                                // Ambil id pengajuan yang sudah ada di laporan_kp
+                                $sudahAdaLaporan = LaporanKp::pluck('id_pengajuan_kp')->toArray();
+                                
+                                return PenerimaanKP::join('pengajuan_kp', 'pengajuan_kp.id', '=', 'penerimaan_kp.id_pengajuan_kp')
                                     ->join('proposal_kps', 'proposal_kps.id_pengajuan_kp', '=', 'pengajuan_kp.id')
-                                    ->where('pengajuan_kp.id_mahasiswa', Auth::user()->id)
+                                    ->where('pengajuan_kp.id_mahasiswa', $mahasiswa->id)
                                     ->where('pengajuan_kp.status_pengajuan', 'diterima')
                                     ->where('proposal_kps.status_proposal', 'diterima')
                                     ->where('penerimaan_kp.status_penerimaan', 'diterima')
+                                    ->whereNotIn('pengajuan_kp.id', $sudahAdaLaporan)
                                     ->pluck('pengajuan_kp.nama_perusahaan', 'pengajuan_kp.id')
-                                    ->toArray()
-                            )
+                                    ->toArray();
+                            })
                             ->required()
                             ->native(false)
                             ->searchable()
@@ -169,6 +179,21 @@ class LaporanKpResource extends Resource
                 // Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
             ]);
+    }
+
+    public static function getTabs(): array
+    {
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'pending' => Tables\Tabs\Tab::make('Pending')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'pending')),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'diterima')),
+            'revisi' => Tables\Tabs\Tab::make('Revisi')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'revisi')),
+            'ditolak' => Tables\Tabs\Tab::make('Ditolak')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'ditolak')),
+        ];
     }
 
     public static function getRelations(): array
@@ -254,7 +279,16 @@ class LaporanKpResource extends Resource
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
                 Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Laporan')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                    
                     // Action::make('status_laporan_edit')
                     //     ->icon('heroicon-o-pencil-square')
                     //     ->label('Edit Status Proposal')
@@ -306,10 +340,12 @@ class LaporanKpResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) {
-            $query->join('laporan_kp', 'laporan_kp.id_pengajuan_kp', '=', 'pengajuan_kp.id')
-                ->join('mahasiswas as mahasiswa', 'mahasiswa.id', '=', 'pengajuan_kp.id_mahasiswa')
-                ->where('pengajuan_kp.id_mahasiswa', Auth::user()->id);
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        if (!$mahasiswa) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) use ($mahasiswa) {
+            $query->where('id_mahasiswa', $mahasiswa->id);
         });
     }
 

@@ -5,6 +5,8 @@ namespace App\Filament\Dosen\Resources;
 use App\Filament\Dosen\Resources\LaporanKpResource\Pages;
 use App\Filament\Dosen\Resources\LaporanKpResource\RelationManagers;
 use App\Models\LaporanKp;
+use App\Models\Dosen;
+use App\Http\Controllers\SuratController;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -95,6 +97,23 @@ class LaporanKpResource extends Resource
             ]);
     }
 
+    public static function getTabs(): array
+    {
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'pending' => Tables\Tabs\Tab::make('Pending')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'pending')),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'diterima')),
+            'revisi' => Tables\Tabs\Tab::make('Revisi')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'revisi')),
+            'ditolak' => Tables\Tabs\Tab::make('Ditolak')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_laporan', 'ditolak')),
+        ];
+    }
+
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
@@ -171,7 +190,16 @@ class LaporanKpResource extends Resource
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
                 Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Laporan')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                    
                     Action::make('status_laporan_edit')
                         ->icon('heroicon-o-pencil-square')
                         ->label('Edit Status Proposal')
@@ -194,6 +222,20 @@ class LaporanKpResource extends Resource
                         ->action(function (array $data, LaporanKp $record): void {
                             $record->status_laporan = $data['status_laporan'];
                             $record->keterangan = $data['keterangan'];
+                            
+                            // Generate surat jika status diterima
+                            if ($data['status_laporan'] === 'diterima') {
+                                try {
+                                    $suratPath = SuratController::generateSuratLaporan($record);
+                                    $record->surat_persetujuan = $suratPath;
+                                } catch (\Exception $e) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Gagal generate surat: ' . $e->getMessage())
+                                        ->danger()
+                                        ->send();
+                                }
+                            }
+                            
                             $record->save();
                         })
                         ->successNotificationTitle('Status updated'),
@@ -204,8 +246,12 @@ class LaporanKpResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) {
-            $query->where('dosens', Auth::user()->id);
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        if (!$dosen) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) use ($dosen) {
+            $query->where('dosens', $dosen->id);
         });
     }
 

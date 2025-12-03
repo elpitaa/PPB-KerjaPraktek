@@ -6,6 +6,7 @@ use App\Filament\Mahasiswa\Resources\ProposalKpResource\Pages;
 use App\Filament\Mahasiswa\Resources\ProposalKpResource\RelationManagers;
 use App\Models\Pengajuan_kp;
 use App\Models\ProposalKp;
+use App\Models\Mahasiswa;
 use Faker\Provider\ar_EG\Text;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
@@ -47,25 +48,27 @@ class ProposalKpResource extends Resource
 
     public static function form(Form $form): Form
     {
+        // Ambil data mahasiswa berdasarkan email user yang login
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        
         return $form
             ->schema([
                 Section::make('Data Pengajuan Mahasiswa')
                     ->schema([
                         TextInput::make('Nama Mahasiswa')
-                            ->default(Auth::user()->name)
-                            ->default(auth::user()->name)
+                            ->default($mahasiswa ? $mahasiswa->name : Auth::user()->name)
                             ->disabled(),
                         TextInput::make('NIM Mahasiswa')
                             ->label('NIM Mahasiswa')
-                            ->default(auth::user()->nim)
+                            ->default($mahasiswa ? $mahasiswa->nim : '-')
                             ->disabled(),
                         TextInput::make('Sks Mahasiswa')
                             ->label('Sks Mahasiswa')
-                            ->default(auth::user()->jumlah_sks)
+                            ->default($mahasiswa ? $mahasiswa->jumlah_sks : '-')
                             ->disabled(),
                         TextInput::make('IPK Mahasiswa')
                             ->label('IPK Mahasiswa')
-                            ->default(auth::user()->ipk)
+                            ->default($mahasiswa ? $mahasiswa->ipk : '-')
                             ->disabled(),
 
                     ])
@@ -77,7 +80,13 @@ class ProposalKpResource extends Resource
                             ->default('pending'),
                         Forms\Components\Select::make('id_pengajuan_kp')
                             ->label('Pilih Pengajuan KP')
-                            ->options(Pengajuan_kp::where('id_mahasiswa', Auth::user()->id)->where('status_pengajuan', 'diterima')->pluck('nama_perusahaan', 'id')->toArray())
+                            ->options(function() use ($mahasiswa) {
+                                if (!$mahasiswa) return [];
+                                return Pengajuan_kp::where('id_mahasiswa', $mahasiswa->id)
+                                    ->where('status_pengajuan', 'diterima')
+                                    ->pluck('nama_perusahaan', 'id')
+                                    ->toArray();
+                            })
                             ->required()
                             ->native(false)
                             ->searchable()
@@ -143,12 +152,27 @@ class ProposalKpResource extends Resource
             ]);
     }
 
+    public static function getTabs(): array
+    {
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+            'pending' => Tables\Tabs\Tab::make('Pending')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_proposal', 'pending')),
+            'diterima' => Tables\Tabs\Tab::make('Diterima')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_proposal', 'diterima')),
+            'revisi' => Tables\Tabs\Tab::make('Revisi')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status_proposal', 'revisi')),
+        ];
+    }
+
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) {
-            $query->join('pengajuan_kp as pk', 'pk.id', '=', 'proposal_kps.id_pengajuan_kp')
-                ->join('mahasiswas as mahasiswa', 'mahasiswa.id', '=', 'pk.id_mahasiswa')
-                ->where('pk.id_mahasiswa', Auth::user()->id);
+        $mahasiswa = Mahasiswa::where('email', Auth::user()->email)->first();
+        if (!$mahasiswa) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('pengajuanKp', function (Builder $query) use ($mahasiswa) {
+            $query->where('id_mahasiswa', $mahasiswa->id);
         });
     }
 
@@ -231,7 +255,16 @@ class ProposalKpResource extends Resource
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
                 Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Proposal')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                    
                     // Action::make('status_proposal_edit')
                     //     ->icon('heroicon-o-pencil-square')
                     //     ->label('Edit Status Proposal')

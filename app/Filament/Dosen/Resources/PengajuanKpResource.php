@@ -6,6 +6,7 @@ use App\Filament\Dosen\Resources\PengajuanKpResource\Pages;
 use App\Filament\Dosen\Resources\PengajuanKpResource\RelationManagers;
 use App\Models\Pengajuan_kp as PengajuanKp;
 use App\Models\Dosen;
+use App\Http\Controllers\SuratController;
 use Filament\Forms;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Tabs\Tab;
@@ -155,7 +156,16 @@ class PengajuanKpResource extends Resource
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
                 Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Pengajuan')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                    
                     Action::make('status_pengajuan_edit')
                         ->icon('heroicon-o-pencil-square')
                         ->label('Edit Status Pengajuan')
@@ -172,6 +182,20 @@ class PengajuanKpResource extends Resource
                         ])
                         ->action(function (array $data, PengajuanKp $record): void {
                             $record->status_pengajuan = $data['status_pengajuan'];
+                            
+                            // Generate surat jika status diterima
+                            if ($data['status_pengajuan'] === 'diterima') {
+                                try {
+                                    $suratPath = SuratController::generateSuratPengajuan($record);
+                                    $record->surat_persetujuan = $suratPath;
+                                } catch (\Exception $e) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Gagal generate surat: ' . $e->getMessage())
+                                        ->danger()
+                                        ->send();
+                                }
+                            }
+                            
                             $record->save();
                         })
                         ->successNotificationTitle('Status updated'),

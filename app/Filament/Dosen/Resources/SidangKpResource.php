@@ -6,6 +6,7 @@ use App\Filament\Dosen\Resources\SidangKpResource\Pages;
 use App\Filament\Dosen\Resources\SidangKpResource\RelationManagers;
 use App\Models\SidangKp;
 use App\Models\Dosen;
+use App\Http\Controllers\SuratController;
 use Filament\Forms;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -86,6 +87,15 @@ class SidangKpResource extends Resource
         ;
     }
 
+    public static function getTabs(): array
+    {
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        
+        return [
+            'all' => Tables\Tabs\Tab::make('Semua'),
+        ];
+    }
+
     public static function infolist(Infolist $infolist): Infolist
     {
         return $infolist
@@ -136,20 +146,89 @@ class SidangKpResource extends Resource
                             }),
                         Components\TextEntry::make('nilai')
                             ->label('Nilai Akhir')
-                            ->default('Belum ada nilai'),
+                            ->default('Belum ada nilai')
+                            ->suffix(function ($state) {
+                                if ($state) {
+                                    if ($state >= 85) return ' (A)';
+                                    if ($state >= 80) return ' (B+)';
+                                    if ($state >= 75) return ' (B)';
+                                    if ($state >= 70) return ' (C+)';
+                                    if ($state >= 65) return ' (C)';
+                                    if ($state >= 60) return ' (D)';
+                                    return ' (E)';
+                                }
+                                return '';
+                            }),
                         Components\TextEntry::make('keterangan')
                             ->label('Keterangan'),
 
                     ])
                     ->columns('2')
                     ->collapsible(),
+                
+                Actions::make([
+                    Action::make('input_nilai')
+                        ->label('Input Nilai & Generate Surat Selesai KP')
+                        ->icon('heroicon-o-academic-cap')
+                        ->visible(fn ($record) => !$record->nilai)
+                        ->form([
+                            Forms\Components\TextInput::make('nilai')
+                                ->label('Nilai Akhir (0-100)')
+                                ->numeric()
+                                ->required()
+                                ->minValue(0)
+                                ->maxValue(100)
+                                ->suffix('/100'),
+                            Textarea::make('keterangan')
+                                ->label('Keterangan')
+                                ->rows(3),
+                        ])
+                        ->action(function (array $data, $record) {
+                            $record->nilai = $data['nilai'];
+                            if (isset($data['keterangan'])) {
+                                $record->keterangan = $data['keterangan'];
+                            }
+                            
+                            // Auto-generate Surat Selesai KP
+                            try {
+                                $suratPath = SuratController::generateSuratSelesai($record);
+                                $record->surat_selesai = $suratPath;
+                                $record->save();
+                                
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Berhasil!')
+                                    ->body('Nilai berhasil disimpan dan Surat Selesai KP telah digenerate.')
+                                    ->success()
+                                    ->send();
+                            } catch (\Exception $e) {
+                                $record->save(); // Save nilai even if PDF generation fails
+                                
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Nilai Tersimpan')
+                                    ->body('Nilai berhasil disimpan, tetapi gagal generate surat: ' . $e->getMessage())
+                                    ->warning()
+                                    ->send();
+                            }
+                        }),
+                    
+                    Action::make('download_surat')
+                        ->label('Download Surat Selesai KP')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->visible(fn ($record) => $record->surat_selesai)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_selesai))
+                        ->openUrlInNewTab(),
+                ]),
             ]);
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) {
-            $query->where('dosens', Auth::user()->id);
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        if (!$dosen) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) use ($dosen) {
+            $query->where('dosens', $dosen->id);
         });
     }
 

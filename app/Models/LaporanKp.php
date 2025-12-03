@@ -13,6 +13,7 @@ class LaporanKp extends Model
         'status_laporan',
         'keterangan',
         'file',
+        'surat_persetujuan',
 
     ];
 

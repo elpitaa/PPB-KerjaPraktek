@@ -11,6 +11,7 @@ class Pengajuan_kp extends Model
         'id_mahasiswa',
         'nama_perusahaan',
         'status_pengajuan',
+        'surat_persetujuan',
         'province_id',
         'city_id',
         'district_id',
