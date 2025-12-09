@@ -59,7 +59,7 @@
 </head>
 <body>
     <div class="kop-surat">
-        <h2>UNIVERSITAS [NAMA UNIVERSITAS]</h2>
+        <h2>UNIVERSITAS TRUNOJOYO MADURA</h2>
         <h2>FAKULTAS TEKNIK</h2>
         <h2>PROGRAM STUDI TEKNIK INFORMATIKA</h2>
         <p>Alamat: Jl. Kampus No. 123, Kota, Provinsi 12345</p>

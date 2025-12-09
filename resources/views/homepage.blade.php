@@ -1,5 +1,5 @@
 @extends('template.layout')
-@section('title', 'Home | SiKaPe')
+@section('title', 'Home | KpKuy')
 @section('content')
 
 
@@ -11,14 +11,7 @@
                     class="mb-4 text-4xl font-extrabold tracking-tight leading-none text-gray-900 md:text-5xl lg:text-6xl dark:text-white">
                     Selamat Datang</h1>
                 <p class="mb-8 text-lg pe-4 font-normal text-justify text-gray-500 lg:text-xl dark:text-gray-400">
-                    <span class="font-bold text-blue-700 dark:text-gray-400">SiKaPe</span> merupakan sistem informasi
-                    kerja prakter yang
-                    bertujuan memudahkan mahasiswa
-                    dan dosen pembimbing dalam melaksanakan prosedur kerja prakter. Sistem ini memungkinkan mahasiswa untuk
-                    melakukan pengajuan kerja praktek,pendaftaran proposal kerja prakter, bimbingan laporan kerja praktek,
-                    pendaftaran sidang kerja praktek, dan input nilai kerja praktek. Sistem ini juga memungkinkan dosen
-                    untuk melakukan validasi pengajuan, proses bimbingan, revisi laporan, validasi laporan dan sidang kerja
-                    praktek serta input nilai kerja praktek.
+                    <span class="font-bold text-blue-700 dark:text-gray-400">KpKuy</span> adalah platform digital yang mempermudah proses pengelolaan Kerja Praktek (KP) dari awal hingga akhir. Mahasiswa dapat mengajukan KP, upload proposal, menerima surat persetujuan, hingga menjadwalkan sidang secara online. Dosen pembimbing dapat mereview dan meng-approve pengajuan, memberikan feedback pada proposal dan laporan, serta menginput nilai sidang dengan mudah. Semua proses terintegrasi dalam satu sistem yang efisien dan terstruktur.
 
                 </p>
                 <div class="flex flex-col space-y-4 sm:flex-row sm:justify-start sm:space-y-0">
