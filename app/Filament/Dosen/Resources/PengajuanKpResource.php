@@ -1,0 +1,245 @@
+<?php
+
+namespace App\Filament\Dosen\Resources;
+
+use App\Filament\Dosen\Resources\PengajuanKpResource\Pages;
+use App\Filament\Dosen\Resources\PengajuanKpResource\RelationManagers;
+use App\Models\Pengajuan_kp as PengajuanKp;
+use App\Models\Dosen;
+use App\Http\Controllers\SuratController;
+use Filament\Forms;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Tabs\Tab;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
+
+use Filament\Infolists\Components;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Actions;
+use Filament\Infolists\Components\Actions\Action;
+use Filament\Infolists\Components\IconEntry;
+
+class PengajuanKpResource extends Resource
+{
+    protected static ?string $model = PengajuanKp::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationLabel = 'Pengajuan KP';
+
+    // // Ganti nama grup di navigasi (jika perlu)
+    protected static ?string $navigationGroup = 'Kerja Praktek';
+    protected static ?int $navigationSort = 2;
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                //
+            ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                TextColumn::make('nama_perusahaan')
+                    ->label('Nama Perusahaan')
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('mahasiswa.name')
+                    ->label('Nama Mahasiswa')
+                    ->searchable()
+                    ->sortable(),
+                IconColumn::make('status_pengajuan')
+                    ->label('status pengajuan')
+                    ->icon(fn(string $state): string => match ($state) {
+                        'pending' => 'heroicon-o-clock',
+                        'diterima' => 'heroicon-m-check',
+                        'ditolak' => 'heroicon-m-x-mark',
+                    })
+                    ->color(fn(string $state): string => match ($state) {
+                        'pending' => 'secondary',
+                        'diterima' => 'success',
+                        'ditolak' => 'danger',
+                    })
+                    ->sortable(),
+                TextColumn::make('created_at')
+                    ->label('dibuat')
+                    ->sortable()
+                    ->since()
+                    ->dateTimeTooltip(),
+                TextColumn::make('updated_at')
+                    ->label('diperbarui')
+                    ->sortable()
+                    ->since()
+                    ->dateTimeTooltip(),
+            ])
+            ->filters([
+                //
+            ])
+            ->actions([
+                Tables\Actions\ViewAction::make(),
+            ])
+            ->headerActions([
+                // Disable create button for dosen
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    // No bulk actions for dosen
+                ]),
+            ])
+            ->emptyStateActions([
+                // Disable create action in empty state
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Components\Section::make('Status Pengajuan')
+                    ->schema(
+                        [
+                            IconEntry::make('status_pengajuan')
+                                ->label('Status Pengajuan')
+                                ->icon(fn(string $state): string => match ($state) {
+                                    'pending' => 'heroicon-o-clock',
+                                    'diterima' => 'heroicon-m-check',
+                                    'ditolak' => 'heroicon-m-x-mark',
+                                })
+                                ->color(fn(string $state): string => match ($state) {
+                                    'pending' => 'secondary',
+                                    'diterima' => 'success',
+                                    'ditolak' => 'danger',
+                                })
+                                ->label(fn(string $state): string => match ($state) {
+                                    'pending' => 'Pending',
+                                    'diterima' => 'Diterima',
+                                    'ditolak' => 'Ditolak',
+                                }),
+                        ]
+                    ),
+
+                Components\Section::make('Data Mahasiswa')
+                    ->schema([
+                        Components\TextEntry::make('mahasiswa.name')
+                            ->label('Nama Mahasiswa'),
+                        Components\TextEntry::make('mahasiswa.nim')
+                            ->label('NIM Mahasiswa'),
+                        Components\TextEntry::make('mahasiswa.jumlah_sks')
+                            ->label('Sks Mahasiswa'),
+                        Components\TextEntry::make('mahasiswa.ipk')
+                            ->label('IPK Mahasiswa'),
+                        Components\TextEntry::make('mahasiswa.link_perusahaan')
+                            ->label('Link Perusahaan')
+                            ->url(fn ($record) => $record->mahasiswa->link_perusahaan)
+                            ->openUrlInNewTab()
+                            ->default('-')
+                            ->copyable()
+                            ->copyMessage('Link berhasil disalin')
+                            ->copyMessageDuration(1500),
+                    ])
+                    ->columns('2')
+                    ->collapsible(),
+                Components\Section::make('Data Perusahaan')
+                    ->schema([
+                        Components\TextEntry::make('nama_perusahaan')
+                            ->label('Nama Perusahaan'),
+                        Components\TextEntry::make('province.prov_name')
+                            ->label('Provinsi'),
+                        Components\TextEntry::make('city.city_name')
+                            ->label('Kota'),
+                        Components\TextEntry::make('district.dis_name')
+                            ->label('Kecamatan'),
+                        Components\TextEntry::make('subdistrict.subdis_name')
+                            ->label('Kelurahan'),
+                        // Components\TextEntry::make('postalcode.postal_code')
+                        //     ->label('Kode Pos'),
+                    ])
+                    ->columns('2')
+                    ->collapsible(),
+                
+                Actions::make([
+                    Action::make('download_surat')
+                        ->label('Download Surat Persetujuan Pengajuan')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->visible(fn ($record) => $record->surat_persetujuan)
+                        ->url(fn ($record) => asset('storage/' . $record->surat_persetujuan))
+                        ->openUrlInNewTab(),
+                    
+                    Action::make('status_pengajuan_edit')
+                        ->icon('heroicon-o-pencil-square')
+                        ->label('Edit Status Pengajuan')
+                        ->form([
+                            Select::make('status_pengajuan')
+                                ->label('Status Pengajuan')
+                                ->options([
+                                    'diterima' => 'Terima',
+                                    'ditolak' => 'Tolak',
+                                ])
+                                ->required()
+                                ->native('false')
+                                ->searchable(),
+                        ])
+                        ->action(function (array $data, PengajuanKp $record): void {
+                            $record->status_pengajuan = $data['status_pengajuan'];
+                            
+                            // Generate surat jika status diterima
+                            if ($data['status_pengajuan'] === 'diterima') {
+                                try {
+                                    $suratPath = SuratController::generateSuratPengajuan($record);
+                                    $record->surat_persetujuan = $suratPath;
+                                } catch (\Exception $e) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Gagal generate surat: ' . $e->getMessage())
+                                        ->danger()
+                                        ->send();
+                                }
+                            }
+                            
+                            $record->save();
+                        })
+                        ->successNotificationTitle('Status updated'),
+                ]),
+            ]);
+    }
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        // Ambil data dosen berdasarkan email user yang login
+        $dosen = Dosen::where('email', Auth::user()->email)->first();
+        
+        if (!$dosen) {
+            // Jika dosen tidak ditemukan, return query kosong
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+        
+        // Filter pengajuan KP berdasarkan mahasiswa yang dibimbing oleh dosen ini
+        return parent::getEloquentQuery()->whereHas('mahasiswa', function (Builder $query) use ($dosen) {
+            $query->where('dosens', $dosen->id);
+        });
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            //
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListPengajuanKps::route('/'),
+            'view' => Pages\ViewPengajuanKp::route('/{record}'),
+
+        ];
+    }
+}
